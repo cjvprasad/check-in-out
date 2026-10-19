@@ -3,102 +3,245 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Check IN / Check OUT Log</title>
+<title>Time Tracker</title>
 <style>
-  body{font-family:system-ui,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}
-  h1{margin-bottom:4px} h3{margin:24px 0 6px}
-  #status{margin:12px 0;font-size:1.1rem}
-  .btns button{font-size:1.1rem;padding:12px 22px;margin:4px 6px 4px 0;border:0;border-radius:8px;cursor:pointer;color:#fff}
-  #inBtn{background:#2e7d32} #outBtn{background:#c62828}
+  :root{
+    --bg:#f4f6fb; --card:#fff; --text:#1c2230; --muted:#6b7385; --line:#e6e9f1;
+    --brand:#4f46e5; --brand-soft:#eef0ff; --green:#16a34a; --green-soft:#e8f7ee;
+    --red:#dc2626; --red-soft:#fdecec; --shadow:0 10px 30px rgba(30,40,90,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1320; --card:#171c2e; --text:#e8ebf5; --muted:#8e97ad; --line:#262d44;
+      --brand:#7c83ff; --brand-soft:#1f2547; --green:#34d399; --green-soft:#12301f;
+      --red:#f87171; --red-soft:#3a1717; --shadow:0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+  button{font-family:inherit;cursor:pointer}
   button:disabled{opacity:.4;cursor:not-allowed}
-  .tools,.filters{margin:10px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .tools button,.filters button{padding:6px 12px;cursor:pointer}
-  select,input[type=week],input[type=month],input[type=number],input[type=datetime-local]{padding:6px}
-  table{width:100%;border-collapse:collapse;margin-top:8px}
-  th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:.95rem}
-  th{background:#f3f3f3}
-  .total{margin-top:10px;font-weight:600}
-  .del{color:#c62828;cursor:pointer;border:0;background:none}
-  .edit{color:#1565c0;cursor:pointer;border:0;background:none}
-  .restore{color:#2e7d32;cursor:pointer;border:0;background:none;font-weight:600}
-  #summary tbody tr{cursor:pointer} #summary tbody tr:hover{background:#f0f7ff}
-  .hint{color:#666;font-size:.85rem}
-  #manualBox{padding:10px 14px;border:1px solid #bbb;border-radius:8px;background:#f8fbff}
-  #manualBox.editing{border-color:#1565c0;background:#eef5ff}
-  #manualBox label{display:inline-block;margin:4px 10px 4px 0}
-  #manualBox button{padding:6px 14px;cursor:pointer}
-  #trashBox{margin-top:30px;padding:10px 14px;border:1px dashed #c62828;border-radius:8px;background:#fff8f8}
-  #emptyTrashBtn{background:#c62828;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
+
+  /* ---------- top bar ---------- */
+  header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+  .bar{max-width:980px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .logo{font-weight:700;font-size:1.05rem;margin-right:auto;display:flex;align-items:center;gap:8px}
+  .logo i{font-style:normal;background:var(--brand);color:#fff;width:30px;height:30px;border-radius:9px;display:grid;place-items:center}
+  .nav{display:flex;gap:6px;flex-wrap:wrap}
+  .nav button{border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:10px;font-size:.92rem;font-weight:600;position:relative}
+  .nav button:hover{background:var(--brand-soft);color:var(--brand)}
+  .nav button.active{background:var(--brand-soft);color:var(--brand)}
+  .badge{background:var(--red);color:#fff;border-radius:99px;font-size:.7rem;padding:1px 7px;margin-left:5px}
+  .badge:empty,.badge.zero{display:none}
+
+  main{max-width:980px;margin:0 auto;padding:22px 16px 60px}
+  .view{display:none;animation:fade .25s ease}
+  .view.show{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* ---------- home ---------- */
+  #home{min-height:calc(100vh - 160px);display:none;align-items:center;justify-content:center}
+  #home.show{display:flex}
+  .hero{width:100%;max-width:460px;background:var(--card);border-radius:24px;box-shadow:var(--shadow);padding:34px 26px;text-align:center}
+  .date{color:var(--muted);font-size:.95rem}
+  .clock{font-size:3.2rem;font-weight:700;letter-spacing:1px;font-variant-numeric:tabular-nums;margin:4px 0 14px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border-radius:99px;font-weight:600;font-size:.9rem}
+  .pill.out{background:var(--brand-soft);color:var(--muted)}
+  .pill.in{background:var(--green-soft);color:var(--green)}
+  .dot{width:9px;height:9px;border-radius:50%;background:currentColor}
+  .pill.in .dot{animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .elapsed{font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;margin:16px 0 0;color:var(--green)}
+  .since{color:var(--muted);font-size:.85rem;margin-bottom:4px}
+  .big{display:flex;gap:12px;margin:26px 0 8px}
+  .big button{flex:1;border:0;border-radius:16px;padding:18px 10px;font-size:1.1rem;font-weight:700;color:#fff;transition:transform .1s,box-shadow .2s}
+  .big button:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(0,0,0,.18)}
+  .big button:not(:disabled):active{transform:scale(.97)}
+  #inBtn{background:var(--green)} #outBtn{background:var(--red)}
+  .today{margin-top:22px;padding-top:18px;border-top:1px dashed var(--line);display:flex;justify-content:space-around}
+  .today div b{display:block;font-size:1.15rem}
+  .today div span{color:var(--muted);font-size:.8rem}
+
+  /* ---------- generic ---------- */
+  .head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .head h2{margin:0;font-size:1.35rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow);margin-bottom:18px}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 14px;border-radius:10px;font-size:.9rem;font-weight:600}
+  .btn:hover:not(:disabled){border-color:var(--brand);color:var(--brand)}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.primary:hover:not(:disabled){color:#fff;filter:brightness(1.1)}
+  .btn.danger{background:var(--red);border-color:var(--red);color:#fff}
+  .btn.danger:hover:not(:disabled){color:#fff;filter:brightness(1.1)}
+  .btn.sm{padding:5px 10px;font-size:.82rem}
+  select,input{font-family:inherit;font-size:.92rem;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}
+  input:focus,select:focus{outline:2px solid var(--brand);outline-offset:1px}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+  .stat{flex:1;min-width:140px;background:var(--brand-soft);border-radius:14px;padding:12px 16px}
+  .stat span{color:var(--muted);font-size:.8rem}
+  .stat b{display:block;font-size:1.25rem;margin-top:2px}
+  .wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:10px;border-bottom:1px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);font-size:.93rem;white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:var(--brand-soft)}
+  .act{white-space:nowrap;text-align:right}
+  .tag{background:var(--green-soft);color:var(--green);padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:600}
+  .muted{color:var(--muted);font-size:.85rem}
+  .empty{text-align:center;color:var(--muted);padding:26px 0}
+  #sumRows tr{cursor:pointer}
+  h3{margin:0 0 8px;font-size:1.05rem}
+
+  /* ---------- modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(10,14,30,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50;backdrop-filter:blur(3px)}
+  .overlay.show{display:flex}
+  .modal{background:var(--card);border-radius:20px;width:100%;max-width:440px;padding:24px;box-shadow:0 20px 50px rgba(0,0,0,.35);animation:pop .2s ease}
+  @keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+  .modal h3{font-size:1.2rem;margin-bottom:14px}
+  .field{display:block;margin-bottom:12px;font-size:.85rem;color:var(--muted);font-weight:600}
+  .field input{display:block;width:100%;margin-top:5px;color:var(--text)}
+  .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+  .datarow{display:grid;gap:10px}
+  .datarow .btn{text-align:left;padding:12px 14px}
+
+  /* ---------- toast ---------- */
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(30px);background:#1c2230;color:#fff;padding:11px 20px;border-radius:12px;font-size:.92rem;opacity:0;pointer-events:none;transition:.3s;z-index:99}
+  #toast.show{opacity:1;transform:translateX(-50%)}
+
+  @media(max-width:520px){ .clock{font-size:2.6rem} .logo span{display:none} }
 </style>
 </head>
 <body>
-<h1>Check IN / Check OUT</h1>
-<div id="status"></div>
 
-<div class="btns">
-  <button id="inBtn">✅ Check IN</button>
-  <button id="outBtn">⏹ Check OUT</button>
-</div>
-
-<h3>Manual entry</h3>
-<div id="manualBox">
-  <div id="manualTitle"><b>Add a past / manual entry</b></div>
-  <label>Check IN <input type="datetime-local" id="mIn" step="1"></label>
-  <label>Check OUT <input type="datetime-local" id="mOut" step="1"></label>
-  <div style="margin-top:6px">
-    <button id="mSave">Add entry</button>
-    <button id="mCancel" hidden>Cancel edit</button>
+<header>
+  <div class="bar">
+    <div class="logo"><i>⏱</i><span>Time Tracker</span></div>
+    <nav class="nav">
+      <button data-view="home" class="active">🏠 Home</button>
+      <button data-view="history">📋 History</button>
+      <button data-view="trash">🗑 Trash<span class="badge zero" id="trashBadge"></span></button>
+      <button id="addNavBtn">＋ Add entry</button>
+      <button id="dataNavBtn">⚙ Data</button>
+    </nav>
   </div>
-  <div class="hint">Leave Check OUT empty to create an entry that is still in progress. Use ✎ on any row to edit it.</div>
+</header>
+
+<main>
+
+  <!-- HOME -->
+  <section id="home" class="view show">
+    <div class="hero">
+      <div class="date" id="dateText"></div>
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="pill out" id="pill"><span class="dot"></span><span id="pillText">Checked OUT</span></div>
+      <div id="liveBox" hidden>
+        <div class="elapsed" id="elapsed">00:00:00</div>
+        <div class="since" id="since"></div>
+      </div>
+      <div class="big">
+        <button id="inBtn">✅ Check IN</button>
+        <button id="outBtn">⏹ Check OUT</button>
+      </div>
+      <div class="today">
+        <div><b id="todayTotal">00h 00m</b><span>Today</span></div>
+        <div><b id="todaySessions">0</b><span>Sessions today</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history" class="view">
+    <div class="head">
+      <h2>History</h2>
+      <button class="btn primary" onclick="openManual()">＋ Add entry</button>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <select id="period">
+          <option value="all">All time</option>
+          <option value="week">Weekly</option>
+          <option value="month">Monthly</option>
+          <option value="year">Yearly</option>
+        </select>
+        <input type="week"   id="weekPick"  hidden>
+        <input type="month"  id="monthPick" hidden>
+        <input type="number" id="yearPick"  min="2000" max="2100" hidden style="width:100px">
+        <button class="btn" id="todayBtn" hidden>Current period</button>
+        <button class="btn" id="csvBtn" style="margin-left:auto">⬇ Export CSV</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><span>Sessions</span><b id="statCount">0</b></div>
+        <div class="stat"><span>Total time</span><b id="statTotal">0</b></div>
+        <div class="stat"><span>Average / session</span><b id="statAvg">0</b></div>
+      </div>
+      <div class="wrap">
+        <table>
+          <thead><tr><th>#</th><th>Date</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3 id="sumTitle">Summary</h3>
+      <div class="muted" style="margin-bottom:8px">Click a row to filter to that period.</div>
+      <div class="wrap">
+        <table>
+          <thead><tr><th>Period</th><th>Sessions</th><th>Total time</th></tr></thead>
+          <tbody id="sumRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRASH -->
+  <section id="trash" class="view">
+    <div class="head">
+      <h2>🗑 Trash</h2>
+      <button class="btn danger" id="emptyTrashBtn">Empty Trash</button>
+    </div>
+    <div class="muted" style="margin-bottom:12px">Deleted entries are kept here. “Delete forever” or “Empty Trash” erases them permanently.</div>
+    <div class="card wrap">
+      <table>
+        <thead><tr><th>Deleted at</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
+        <tbody id="trashRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- MANUAL ADD / EDIT MODAL -->
+<div class="overlay" id="manualModal">
+  <div class="modal">
+    <h3 id="manualTitle">Add a manual entry</h3>
+    <label class="field">Check IN<input type="datetime-local" id="mIn" step="1"></label>
+    <label class="field">Check OUT <span style="font-weight:400">(leave empty if still in progress)</span><input type="datetime-local" id="mOut" step="1"></label>
+    <div class="row">
+      <button class="btn" id="mCancel">Cancel</button>
+      <button class="btn primary" id="mSave">Add entry</button>
+    </div>
+  </div>
 </div>
 
-<div class="tools">
-  <button id="csvBtn">Export CSV (current view)</button>
-  <button id="jsonBtn">Backup all (JSON)</button>
-  <button id="importBtn">Import JSON / CSV</button>
-  <select id="importMode">
-    <option value="merge">Import: merge with existing</option>
-    <option value="replace">Import: replace existing</option>
-  </select>
-  <input type="file" id="importFile" accept=".json,.csv" hidden>
+<!-- DATA MODAL -->
+<div class="overlay" id="dataModal">
+  <div class="modal">
+    <h3>Data &amp; backup</h3>
+    <div class="datarow">
+      <button class="btn" id="jsonBtn">💾 Backup everything (JSON)</button>
+      <button class="btn" id="importBtn">⬆ Import JSON / CSV</button>
+      <select id="importMode">
+        <option value="merge">Import mode: merge with existing</option>
+        <option value="replace">Import mode: replace existing</option>
+      </select>
+      <input type="file" id="importFile" accept=".json,.csv" hidden>
+    </div>
+    <div class="muted" style="margin-top:12px">Data lives in this browser. Download a backup now and then to keep it safe.</div>
+    <div class="row"><button class="btn" data-close>Close</button></div>
+  </div>
 </div>
 
-<h3>Filter</h3>
-<div class="filters">
-  <select id="period">
-    <option value="all">All time</option>
-    <option value="week">Weekly</option>
-    <option value="month">Monthly</option>
-    <option value="year">Yearly</option>
-  </select>
-  <input type="week"   id="weekPick"  hidden>
-  <input type="month"  id="monthPick" hidden>
-  <input type="number" id="yearPick"  min="2000" max="2100" hidden>
-  <button id="todayBtn" hidden>Current period</button>
-</div>
-
-<div class="total" id="total"></div>
-<table>
-  <thead><tr><th>#</th><th>Date</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-
-<h3 id="sumTitle">Summary</h3>
-<div class="hint">Click a row to filter to that period.</div>
-<table id="summary">
-  <thead><tr><th>Period</th><th>Sessions</th><th>Total time</th></tr></thead>
-  <tbody id="sumRows"></tbody>
-</table>
-
-<div id="trashBox">
-  <h3 style="margin-top:0">🗑 Trash (<span id="trashCount">0</span>)</h3>
-  <div class="hint">Deleted entries are kept here. "Delete forever" or "Empty Trash" erases them permanently.</div>
-  <div style="margin:8px 0"><button id="emptyTrashBtn">Empty Trash</button></div>
-  <table>
-    <thead><tr><th>Deleted at</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
-    <tbody id="trashRows"></tbody>
-  </table>
-</div>
+<div id="toast"></div>
 
 <script>
 const KEY = 'checkinout_logs_v1';
@@ -113,7 +256,7 @@ const save = () => {
   localStorage.setItem(KEY, JSON.stringify(logs));
   localStorage.setItem(TRASH_KEY, JSON.stringify(trash));
 };
-const fmtDate = iso => new Date(iso).toLocaleDateString();
+const fmtDate = iso => new Date(iso).toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'});
 const fmtTime = iso => new Date(iso).toLocaleTimeString();
 const fmtDateTime = iso => new Date(iso).toLocaleString();
 const openIndex = () => logs.findIndex(l => l.out === null);
@@ -123,13 +266,43 @@ const toLocalInput = iso => {
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
-
 function fmtDuration(ms){
-  const s = Math.floor(ms / 1000);
+  const s = Math.max(0, Math.floor(ms / 1000));
   return `${pad(Math.floor(s/3600))}h ${pad(Math.floor(s%3600/60))}m ${pad(s%60)}s`;
 }
+function fmtClock(ms){
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${pad(Math.floor(s/3600))}:${pad(Math.floor(s%3600/60))}:${pad(s%60)}`;
+}
+let toastTimer;
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
 
-/* ---------- period helpers (weeks are ISO: Monday start) ---------- */
+/* ---------- view switching ---------- */
+function showView(name){
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('show', v.id === name));
+  document.querySelectorAll('.nav button[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  render();
+}
+document.querySelectorAll('.nav button[data-view]').forEach(b => b.onclick = () => showView(b.dataset.view));
+const currentView = () => document.querySelector('.view.show').id;
+
+/* ---------- modals ---------- */
+const openModal  = id => $(id).classList.add('show');
+const closeModal = id => $(id).classList.remove('show');
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('mousedown', e => { if (e.target === o) closeAllModals(); });
+  o.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAllModals);
+});
+function closeAllModals(){
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('show'));
+  editIndex = -1;
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAllModals(); });
+
+/* ---------- period helpers (ISO weeks, Monday start) ---------- */
 function weekKey(d){
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
@@ -140,7 +313,6 @@ function weekKey(d){
 const monthKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
 const yearKey  = d => String(d.getFullYear());
 function keyOf(type, d){ return type==='week' ? weekKey(d) : type==='month' ? monthKey(d) : yearKey(d); }
-
 function rangeOf(type, val){
   if (type === 'week'){
     const [y, w] = val.split('-W').map(Number);
@@ -160,35 +332,31 @@ function rangeOf(type, val){
 
 /* ---------- live check in / out ---------- */
 function checkIn(){
-  if (isOpen()) return alert('You are already checked IN. Check OUT first.');
+  if (isOpen()) return toast('You are already checked IN.');
   logs.push({ in: new Date().toISOString(), out: null });
-  save(); render();
+  save(); render(); toast('Checked IN ✅');
 }
 function checkOut(){
   const i = openIndex();
-  if (i === -1) return alert('You are not checked IN.');
+  if (i === -1) return toast('You are not checked IN.');
   logs[i].out = new Date().toISOString();
-  save(); render();
+  save(); render(); toast('Checked OUT ⏹');
 }
 
 /* ---------- manual add / edit ---------- */
-function resetManual(){
-  editIndex = -1;
-  $('mIn').value = ''; $('mOut').value = '';
-  $('mSave').textContent = 'Add entry';
-  $('mCancel').hidden = true;
-  $('manualBox').classList.remove('editing');
-  $('manualTitle').innerHTML = '<b>Add a past / manual entry</b>';
-}
-function startEdit(i){
+function openManual(i = -1){
   editIndex = i;
-  $('mIn').value  = toLocalInput(logs[i].in);
-  $('mOut').value = logs[i].out ? toLocalInput(logs[i].out) : '';
-  $('mSave').textContent = 'Save changes';
-  $('mCancel').hidden = false;
-  $('manualBox').classList.add('editing');
-  $('manualTitle').innerHTML = `<b>Editing entry #${i+1}</b>`;
-  $('manualBox').scrollIntoView({ behavior:'smooth', block:'center' });
+  if (i === -1){
+    $('manualTitle').textContent = 'Add a manual entry';
+    $('mIn').value = ''; $('mOut').value = '';
+    $('mSave').textContent = 'Add entry';
+  } else {
+    $('manualTitle').textContent = `Edit entry #${i+1}`;
+    $('mIn').value  = toLocalInput(logs[i].in);
+    $('mOut').value = logs[i].out ? toLocalInput(logs[i].out) : '';
+    $('mSave').textContent = 'Save changes';
+  }
+  openModal('manualModal');
 }
 function saveManual(){
   if (!$('mIn').value) return alert('Please enter a Check IN date and time.');
@@ -197,17 +365,12 @@ function saveManual(){
   if (isNaN(a) || (b && isNaN(b))) return alert('Invalid date/time.');
   if (b && b < a) return alert('Check OUT cannot be earlier than Check IN.');
   const now = new Date();
-  if (a > now || (b && b > now)) {
-    if (!confirm('This time is in the future. Save anyway?')) return;
-  }
-  // only one in-progress entry allowed
+  if ((a > now || (b && b > now)) && !confirm('This time is in the future. Save anyway?')) return;
   const otherOpen = logs.findIndex((l, i) => l.out === null && i !== editIndex);
   if (!b && otherOpen !== -1)
     return alert('You already have an entry in progress. Fill in its Check OUT first, or give this entry a Check OUT time.');
-  // duplicate check-in time
   if (logs.some((l, i) => i !== editIndex && l.in === a.toISOString()))
     return alert('An entry with this exact Check IN time already exists.');
-  // overlap warning
   const aT = a.getTime(), bT = b ? b.getTime() : Infinity;
   const overlap = logs.some((l, i) => {
     if (i === editIndex) return false;
@@ -217,8 +380,10 @@ function saveManual(){
   if (overlap && !confirm('This overlaps another entry. Save anyway?')) return;
 
   const entry = { in: a.toISOString(), out: b ? b.toISOString() : null };
-  if (editIndex === -1) logs.push(entry); else logs[editIndex] = entry;
-  sortLogs(); save(); resetManual(); render();
+  const wasEdit = editIndex !== -1;
+  if (!wasEdit) logs.push(entry); else logs[editIndex] = entry;
+  sortLogs(); save(); closeAllModals(); render();
+  toast(wasEdit ? 'Entry updated ✎' : 'Entry added ✅');
 }
 
 /* ---------- trash ---------- */
@@ -226,8 +391,7 @@ function removeEntry(i){
   if (!confirm('Move this entry to Trash?')) return;
   const [item] = logs.splice(i, 1);
   trash.push({ ...item, deletedAt: new Date().toISOString() });
-  if (editIndex !== -1) resetManual();
-  save(); render();
+  save(); render(); toast('Moved to Trash 🗑');
 }
 function restoreEntry(i){
   const item = trash[i];
@@ -237,22 +401,19 @@ function restoreEntry(i){
     return alert('An entry with this check-in time already exists.');
   trash.splice(i, 1);
   logs.push({ in: item.in, out: item.out });
-  if (editIndex !== -1) resetManual();
-  sortLogs(); save(); render();
+  sortLogs(); save(); render(); toast('Entry restored ↩');
 }
 function deleteForever(i){
   if (!confirm('Permanently erase this entry? This cannot be undone.')) return;
-  trash.splice(i, 1);
-  save(); render();
+  trash.splice(i, 1); save(); render(); toast('Erased permanently');
 }
 function emptyTrash(){
   if (!trash.length) return;
   if (!confirm(`Permanently erase all ${trash.length} entries in Trash? This cannot be undone.`)) return;
-  trash = [];
-  save(); render();
+  trash = []; save(); render(); toast('Trash emptied');
 }
 
-/* ---------- filter UI ---------- */
+/* ---------- filter ---------- */
 function setCurrentPeriod(){
   const now = new Date();
   $('weekPick').value  = weekKey(now);
@@ -268,11 +429,35 @@ function updatePickers(){
 }
 function currentFilter(){
   const p = $('period').value;
-  if (p === 'all') return { p, list: logs.map((l,i) => ({...l, i})) };
+  const all = logs.map((l,i) => ({...l, i}));
+  if (p === 'all') return { p, list: all };
   const val = $(p + 'Pick').value;
   if (!val) return { p, list: [] };
   const [s, e] = rangeOf(p, val);
-  return { p, list: logs.map((l,i) => ({...l, i})).filter(l => { const d = new Date(l.in); return d >= s && d < e; }) };
+  return { p, list: all.filter(l => { const d = new Date(l.in); return d >= s && d < e; }) };
+}
+
+/* ---------- live bits (home) ---------- */
+function tick(){
+  const now = new Date();
+  $('clock').textContent = now.toLocaleTimeString([], {hour12:false});
+  $('dateText').textContent = now.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const oi = openIndex();
+  if (oi !== -1) $('elapsed').textContent = fmtClock(now - new Date(logs[oi].in));
+  if (currentView() === 'home') renderToday();
+}
+function renderToday(){
+  const now = new Date();
+  const dayKey = d => d.toDateString();
+  let ms = 0, n = 0;
+  logs.forEach(l => {
+    if (dayKey(new Date(l.in)) !== dayKey(now)) return;
+    n++;
+    ms += (l.out ? new Date(l.out) : now) - new Date(l.in);
+  });
+  const s = Math.floor(ms/1000);
+  $('todayTotal').textContent = `${pad(Math.floor(s/3600))}h ${pad(Math.floor(s%3600/60))}m`;
+  $('todaySessions').textContent = n;
 }
 
 /* ---------- render ---------- */
@@ -280,21 +465,33 @@ function render(){
   const open = isOpen();
   $('inBtn').disabled  = open;
   $('outBtn').disabled = !open;
-  $('status').innerHTML = open
-    ? `🟢 Checked IN since <b>${fmtDateTime(logs[openIndex()].in)}</b>`
-    : '⚪ Currently checked OUT';
+  $('pill').className = 'pill ' + (open ? 'in' : 'out');
+  $('pillText').textContent = open ? 'Checked IN' : 'Checked OUT';
+  $('liveBox').hidden = !open;
+  if (open) $('since').textContent = 'since ' + fmtDateTime(logs[openIndex()].in);
+  $('trashBadge').textContent = trash.length;
+  $('trashBadge').classList.toggle('zero', !trash.length);
+  tick();
 
+  const v = currentView();
+  if (v === 'history') renderHistory();
+  if (v === 'trash')   renderTrash();
+}
+
+function renderHistory(){
   const { p, list } = currentFilter();
-  let totalMs = 0;
+  let totalMs = 0, done = 0;
   $('rows').innerHTML = list.map(l => {
     let dur = '—';
-    if (l.out){ const d = new Date(l.out) - new Date(l.in); totalMs += d; dur = fmtDuration(d); }
+    if (l.out){ const d = new Date(l.out) - new Date(l.in); totalMs += d; done++; dur = fmtDuration(d); }
     return `<tr><td>${l.i+1}</td><td>${fmtDate(l.in)}</td><td>${fmtTime(l.in)}</td>
-      <td>${l.out ? fmtTime(l.out) : '<i>in progress</i>'}</td><td>${dur}</td>
-      <td><button class="edit" title="Edit" onclick="startEdit(${l.i})">✎</button>
-          <button class="del" title="Move to Trash" onclick="removeEntry(${l.i})">✕</button></td></tr>`;
-  }).reverse().join('') || '<tr><td colspan="6"><i>No entries</i></td></tr>';
-  $('total').textContent = `Sessions: ${list.length}  |  Total time: ${fmtDuration(totalMs)}`;
+      <td>${l.out ? fmtTime(l.out) : '<span class="tag">in progress</span>'}</td><td>${dur}</td>
+      <td class="act"><button class="btn sm" title="Edit" onclick="openManual(${l.i})">✎ Edit</button>
+          <button class="btn sm" title="Move to Trash" onclick="removeEntry(${l.i})">✕</button></td></tr>`;
+  }).reverse().join('') || '<tr><td colspan="6" class="empty">No entries for this view</td></tr>';
+  $('statCount').textContent = list.length;
+  $('statTotal').textContent = fmtDuration(totalMs);
+  $('statAvg').textContent   = done ? fmtDuration(totalMs / done) : '—';
 
   const gType = p === 'all' ? 'month' : p;
   $('sumTitle').textContent = 'Summary by ' + gType;
@@ -307,18 +504,19 @@ function render(){
   });
   $('sumRows').innerHTML = Object.keys(groups).sort().reverse().map(k =>
     `<tr data-k="${k}"><td>${k}</td><td>${groups[k].n}</td><td>${fmtDuration(groups[k].ms)}</td></tr>`
-  ).join('') || '<tr><td colspan="3"><i>No data</i></td></tr>';
+  ).join('') || '<tr><td colspan="3" class="empty">No data yet</td></tr>';
   $('sumRows').dataset.type = gType;
+}
 
-  $('trashCount').textContent = trash.length;
+function renderTrash(){
   $('emptyTrashBtn').disabled = !trash.length;
   $('trashRows').innerHTML = trash.map((t, i) => {
     const dur = t.out ? fmtDuration(new Date(t.out) - new Date(t.in)) : '—';
     return `<tr><td>${fmtDateTime(t.deletedAt)}</td><td>${fmtDateTime(t.in)}</td>
-      <td>${t.out ? fmtDateTime(t.out) : '<i>in progress</i>'}</td><td>${dur}</td>
-      <td><button class="restore" onclick="restoreEntry(${i})">Restore</button>
-          <button class="del" onclick="deleteForever(${i})">Delete forever</button></td></tr>`;
-  }).reverse().join('') || '<tr><td colspan="5"><i>Trash is empty</i></td></tr>';
+      <td>${t.out ? fmtDateTime(t.out) : '<span class="tag">in progress</span>'}</td><td>${dur}</td>
+      <td class="act"><button class="btn sm" onclick="restoreEntry(${i})">↩ Restore</button>
+          <button class="btn sm danger" onclick="deleteForever(${i})">Delete forever</button></td></tr>`;
+  }).reverse().join('') || '<tr><td colspan="5" class="empty">Trash is empty</td></tr>';
 }
 
 /* ---------- export / import ---------- */
@@ -327,7 +525,6 @@ function download(name, text, type){
   a.href = URL.createObjectURL(new Blob([text], {type}));
   a.download = name; a.click();
 }
-
 function parseCSVLine(line){
   const out = []; let cur = '', q = false;
   for (let i = 0; i < line.length; i++){
@@ -339,7 +536,6 @@ function parseCSVLine(line){
   }
   out.push(cur); return out.map(s => s.trim());
 }
-
 function cleanItems(items){
   let skipped = 0; const clean = [];
   items.forEach(r => {
@@ -351,7 +547,6 @@ function cleanItems(items){
   });
   return { clean, skipped };
 }
-
 function parseImport(name, text){
   if (name.toLowerCase().endsWith('.json')){
     const data = JSON.parse(text);
@@ -376,8 +571,10 @@ function parseImport(name, text){
 /* ---------- events ---------- */
 $('inBtn').onclick  = checkIn;
 $('outBtn').onclick = checkOut;
-$('mSave').onclick  = saveManual;
-$('mCancel').onclick = resetManual;
+$('addNavBtn').onclick  = () => openManual(-1);
+$('dataNavBtn').onclick = () => openModal('dataModal');
+$('mSave').onclick   = saveManual;
+$('mCancel').onclick = closeAllModals;
 $('emptyTrashBtn').onclick = emptyTrash;
 $('period').onchange = () => { updatePickers(); render(); };
 ['weekPick','monthPick','yearPick'].forEach(id => $(id).onchange = render);
@@ -420,8 +617,8 @@ $('importFile').onchange = e => {
           res.trash.forEach(t => { if (!seenT.has(t.in)) trash.push({ ...t, deletedAt: t.deletedAt || new Date().toISOString() }); });
         }
       }
-      resetManual(); sortLogs(); save(); render();
-      alert(`Imported ${res.logs.length} entries.` + (res.skipped ? ` Skipped ${res.skipped} invalid rows.` : ''));
+      sortLogs(); save(); closeAllModals(); render();
+      toast(`Imported ${res.logs.length} entries` + (res.skipped ? ` (${res.skipped} skipped)` : ''));
     } catch (err) { alert('Could not read file: ' + err.message); }
     e.target.value = '';
   };
@@ -431,6 +628,7 @@ $('importFile').onchange = e => {
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
 setCurrentPeriod(); updatePickers(); render();
+setInterval(tick, 1000);
 </script>
 </body>
 </html>
