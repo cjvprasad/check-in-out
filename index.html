@@ -13,15 +13,20 @@
   button:disabled{opacity:.4;cursor:not-allowed}
   .tools,.filters{margin:10px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   .tools button,.filters button{padding:6px 12px;cursor:pointer}
-  select,input[type=week],input[type=month],input[type=number]{padding:6px}
+  select,input[type=week],input[type=month],input[type=number],input[type=datetime-local]{padding:6px}
   table{width:100%;border-collapse:collapse;margin-top:8px}
   th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:.95rem}
   th{background:#f3f3f3}
   .total{margin-top:10px;font-weight:600}
   .del{color:#c62828;cursor:pointer;border:0;background:none}
+  .edit{color:#1565c0;cursor:pointer;border:0;background:none}
   .restore{color:#2e7d32;cursor:pointer;border:0;background:none;font-weight:600}
   #summary tbody tr{cursor:pointer} #summary tbody tr:hover{background:#f0f7ff}
   .hint{color:#666;font-size:.85rem}
+  #manualBox{padding:10px 14px;border:1px solid #bbb;border-radius:8px;background:#f8fbff}
+  #manualBox.editing{border-color:#1565c0;background:#eef5ff}
+  #manualBox label{display:inline-block;margin:4px 10px 4px 0}
+  #manualBox button{padding:6px 14px;cursor:pointer}
   #trashBox{margin-top:30px;padding:10px 14px;border:1px dashed #c62828;border-radius:8px;background:#fff8f8}
   #emptyTrashBtn{background:#c62828;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
 </style>
@@ -33,6 +38,18 @@
 <div class="btns">
   <button id="inBtn">✅ Check IN</button>
   <button id="outBtn">⏹ Check OUT</button>
+</div>
+
+<h3>Manual entry</h3>
+<div id="manualBox">
+  <div id="manualTitle"><b>Add a past / manual entry</b></div>
+  <label>Check IN <input type="datetime-local" id="mIn" step="1"></label>
+  <label>Check OUT <input type="datetime-local" id="mOut" step="1"></label>
+  <div style="margin-top:6px">
+    <button id="mSave">Add entry</button>
+    <button id="mCancel" hidden>Cancel edit</button>
+  </div>
+  <div class="hint">Leave Check OUT empty to create an entry that is still in progress. Use ✎ on any row to edit it.</div>
 </div>
 
 <div class="tools">
@@ -88,6 +105,7 @@ const KEY = 'checkinout_logs_v1';
 const TRASH_KEY = 'checkinout_trash_v1';
 let logs  = JSON.parse(localStorage.getItem(KEY) || '[]');        // [{in, out}]
 let trash = JSON.parse(localStorage.getItem(TRASH_KEY) || '[]');  // [{in, out, deletedAt}]
+let editIndex = -1;
 
 const $ = id => document.getElementById(id);
 const pad = n => String(n).padStart(2, '0');
@@ -101,6 +119,10 @@ const fmtDateTime = iso => new Date(iso).toLocaleString();
 const openIndex = () => logs.findIndex(l => l.out === null);
 const isOpen = () => openIndex() !== -1;
 const sortLogs = () => logs.sort((a,b) => new Date(a.in) - new Date(b.in));
+const toLocalInput = iso => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
 
 function fmtDuration(ms){
   const s = Math.floor(ms / 1000);
@@ -136,7 +158,7 @@ function rangeOf(type, val){
   return [new Date(y,0,1), new Date(y+1,0,1)];
 }
 
-/* ---------- actions ---------- */
+/* ---------- live check in / out ---------- */
 function checkIn(){
   if (isOpen()) return alert('You are already checked IN. Check OUT first.');
   logs.push({ in: new Date().toISOString(), out: null });
@@ -149,11 +171,62 @@ function checkOut(){
   save(); render();
 }
 
-// Delete = move to trash (still stored)
+/* ---------- manual add / edit ---------- */
+function resetManual(){
+  editIndex = -1;
+  $('mIn').value = ''; $('mOut').value = '';
+  $('mSave').textContent = 'Add entry';
+  $('mCancel').hidden = true;
+  $('manualBox').classList.remove('editing');
+  $('manualTitle').innerHTML = '<b>Add a past / manual entry</b>';
+}
+function startEdit(i){
+  editIndex = i;
+  $('mIn').value  = toLocalInput(logs[i].in);
+  $('mOut').value = logs[i].out ? toLocalInput(logs[i].out) : '';
+  $('mSave').textContent = 'Save changes';
+  $('mCancel').hidden = false;
+  $('manualBox').classList.add('editing');
+  $('manualTitle').innerHTML = `<b>Editing entry #${i+1}</b>`;
+  $('manualBox').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+function saveManual(){
+  if (!$('mIn').value) return alert('Please enter a Check IN date and time.');
+  const a = new Date($('mIn').value);
+  const b = $('mOut').value ? new Date($('mOut').value) : null;
+  if (isNaN(a) || (b && isNaN(b))) return alert('Invalid date/time.');
+  if (b && b < a) return alert('Check OUT cannot be earlier than Check IN.');
+  const now = new Date();
+  if (a > now || (b && b > now)) {
+    if (!confirm('This time is in the future. Save anyway?')) return;
+  }
+  // only one in-progress entry allowed
+  const otherOpen = logs.findIndex((l, i) => l.out === null && i !== editIndex);
+  if (!b && otherOpen !== -1)
+    return alert('You already have an entry in progress. Fill in its Check OUT first, or give this entry a Check OUT time.');
+  // duplicate check-in time
+  if (logs.some((l, i) => i !== editIndex && l.in === a.toISOString()))
+    return alert('An entry with this exact Check IN time already exists.');
+  // overlap warning
+  const aT = a.getTime(), bT = b ? b.getTime() : Infinity;
+  const overlap = logs.some((l, i) => {
+    if (i === editIndex) return false;
+    const s = new Date(l.in).getTime(), e = l.out ? new Date(l.out).getTime() : Infinity;
+    return aT < e && s < bT;
+  });
+  if (overlap && !confirm('This overlaps another entry. Save anyway?')) return;
+
+  const entry = { in: a.toISOString(), out: b ? b.toISOString() : null };
+  if (editIndex === -1) logs.push(entry); else logs[editIndex] = entry;
+  sortLogs(); save(); resetManual(); render();
+}
+
+/* ---------- trash ---------- */
 function removeEntry(i){
   if (!confirm('Move this entry to Trash?')) return;
   const [item] = logs.splice(i, 1);
   trash.push({ ...item, deletedAt: new Date().toISOString() });
+  if (editIndex !== -1) resetManual();
   save(); render();
 }
 function restoreEntry(i){
@@ -164,9 +237,9 @@ function restoreEntry(i){
     return alert('An entry with this check-in time already exists.');
   trash.splice(i, 1);
   logs.push({ in: item.in, out: item.out });
+  if (editIndex !== -1) resetManual();
   sortLogs(); save(); render();
 }
-// Permanent erase
 function deleteForever(i){
   if (!confirm('Permanently erase this entry? This cannot be undone.')) return;
   trash.splice(i, 1);
@@ -208,7 +281,7 @@ function render(){
   $('inBtn').disabled  = open;
   $('outBtn').disabled = !open;
   $('status').innerHTML = open
-    ? `🟢 Checked IN since <b>${fmtTime(logs[openIndex()].in)}</b>`
+    ? `🟢 Checked IN since <b>${fmtDateTime(logs[openIndex()].in)}</b>`
     : '⚪ Currently checked OUT';
 
   const { p, list } = currentFilter();
@@ -218,11 +291,11 @@ function render(){
     if (l.out){ const d = new Date(l.out) - new Date(l.in); totalMs += d; dur = fmtDuration(d); }
     return `<tr><td>${l.i+1}</td><td>${fmtDate(l.in)}</td><td>${fmtTime(l.in)}</td>
       <td>${l.out ? fmtTime(l.out) : '<i>in progress</i>'}</td><td>${dur}</td>
-      <td><button class="del" title="Move to Trash" onclick="removeEntry(${l.i})">✕</button></td></tr>`;
+      <td><button class="edit" title="Edit" onclick="startEdit(${l.i})">✎</button>
+          <button class="del" title="Move to Trash" onclick="removeEntry(${l.i})">✕</button></td></tr>`;
   }).reverse().join('') || '<tr><td colspan="6"><i>No entries</i></td></tr>';
   $('total').textContent = `Sessions: ${list.length}  |  Total time: ${fmtDuration(totalMs)}`;
 
-  // grouped summary
   const gType = p === 'all' ? 'month' : p;
   $('sumTitle').textContent = 'Summary by ' + gType;
   const groups = {};
@@ -237,7 +310,6 @@ function render(){
   ).join('') || '<tr><td colspan="3"><i>No data</i></td></tr>';
   $('sumRows').dataset.type = gType;
 
-  // trash
   $('trashCount').textContent = trash.length;
   $('emptyTrashBtn').disabled = !trash.length;
   $('trashRows').innerHTML = trash.map((t, i) => {
@@ -280,12 +352,11 @@ function cleanItems(items){
   return { clean, skipped };
 }
 
-// returns { logs, trash, skipped }
 function parseImport(name, text){
   if (name.toLowerCase().endsWith('.json')){
     const data = JSON.parse(text);
     let l = [], t = null;
-    if (Array.isArray(data)) l = data;                       // old backup format
+    if (Array.isArray(data)) l = data;
     else if (data && Array.isArray(data.logs)) { l = data.logs; t = data.trash || []; }
     else throw new Error('Unrecognised JSON format');
     const a = cleanItems(l.map(r => ({ in: r.in, out: r.out || null })));
@@ -305,6 +376,8 @@ function parseImport(name, text){
 /* ---------- events ---------- */
 $('inBtn').onclick  = checkIn;
 $('outBtn').onclick = checkOut;
+$('mSave').onclick  = saveManual;
+$('mCancel').onclick = resetManual;
 $('emptyTrashBtn').onclick = emptyTrash;
 $('period').onchange = () => { updatePickers(); render(); };
 ['weekPick','monthPick','yearPick'].forEach(id => $(id).onchange = render);
@@ -326,7 +399,6 @@ $('csvBtn').onclick = () => {
   ].map(v => `"${v}"`).join(',')));
   download('checkin_log.csv', rows.join('\n'), 'text/csv');
 };
-// Backup now includes the trash too
 $('jsonBtn').onclick = () =>
   download('checkin_backup.json', JSON.stringify({ logs, trash }, null, 2), 'application/json');
 
@@ -348,7 +420,7 @@ $('importFile').onchange = e => {
           res.trash.forEach(t => { if (!seenT.has(t.in)) trash.push({ ...t, deletedAt: t.deletedAt || new Date().toISOString() }); });
         }
       }
-      sortLogs(); save(); render();
+      resetManual(); sortLogs(); save(); render();
       alert(`Imported ${res.logs.length} entries.` + (res.skipped ? ` Skipped ${res.skipped} invalid rows.` : ''));
     } catch (err) { alert('Could not read file: ' + err.message); }
     e.target.value = '';
