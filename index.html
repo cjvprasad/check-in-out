@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check IN / Check OUT Log</title>
+<style>
+  body{font-family:system-ui,Arial,sans-serif;max-width:900px;margin:30px auto;padding:0 16px;color:#222}
+  h1{margin-bottom:4px} h3{margin:24px 0 6px}
+  #status{margin:12px 0;font-size:1.1rem}
+  .btns button{font-size:1.1rem;padding:12px 22px;margin:4px 6px 4px 0;border:0;border-radius:8px;cursor:pointer;color:#fff}
+  #inBtn{background:#2e7d32} #outBtn{background:#c62828}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .tools,.filters{margin:10px 0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .tools button,.filters button{padding:6px 12px;cursor:pointer}
+  select,input[type=week],input[type=month],input[type=number]{padding:6px}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:.95rem}
+  th{background:#f3f3f3}
+  .total{margin-top:10px;font-weight:600}
+  .del{color:#c62828;cursor:pointer;border:0;background:none}
+  .restore{color:#2e7d32;cursor:pointer;border:0;background:none;font-weight:600}
+  #summary tbody tr{cursor:pointer} #summary tbody tr:hover{background:#f0f7ff}
+  .hint{color:#666;font-size:.85rem}
+  #trashBox{margin-top:30px;padding:10px 14px;border:1px dashed #c62828;border-radius:8px;background:#fff8f8}
+  #emptyTrashBtn{background:#c62828;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>Check IN / Check OUT</h1>
+<div id="status"></div>
+
+<div class="btns">
+  <button id="inBtn">✅ Check IN</button>
+  <button id="outBtn">⏹ Check OUT</button>
+</div>
+
+<div class="tools">
+  <button id="csvBtn">Export CSV (current view)</button>
+  <button id="jsonBtn">Backup all (JSON)</button>
+  <button id="importBtn">Import JSON / CSV</button>
+  <select id="importMode">
+    <option value="merge">Import: merge with existing</option>
+    <option value="replace">Import: replace existing</option>
+  </select>
+  <input type="file" id="importFile" accept=".json,.csv" hidden>
+</div>
+
+<h3>Filter</h3>
+<div class="filters">
+  <select id="period">
+    <option value="all">All time</option>
+    <option value="week">Weekly</option>
+    <option value="month">Monthly</option>
+    <option value="year">Yearly</option>
+  </select>
+  <input type="week"   id="weekPick"  hidden>
+  <input type="month"  id="monthPick" hidden>
+  <input type="number" id="yearPick"  min="2000" max="2100" hidden>
+  <button id="todayBtn" hidden>Current period</button>
+</div>
+
+<div class="total" id="total"></div>
+<table>
+  <thead><tr><th>#</th><th>Date</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<h3 id="sumTitle">Summary</h3>
+<div class="hint">Click a row to filter to that period.</div>
+<table id="summary">
+  <thead><tr><th>Period</th><th>Sessions</th><th>Total time</th></tr></thead>
+  <tbody id="sumRows"></tbody>
+</table>
+
+<div id="trashBox">
+  <h3 style="margin-top:0">🗑 Trash (<span id="trashCount">0</span>)</h3>
+  <div class="hint">Deleted entries are kept here. "Delete forever" or "Empty Trash" erases them permanently.</div>
+  <div style="margin:8px 0"><button id="emptyTrashBtn">Empty Trash</button></div>
+  <table>
+    <thead><tr><th>Deleted at</th><th>Check IN</th><th>Check OUT</th><th>Duration</th><th></th></tr></thead>
+    <tbody id="trashRows"></tbody>
+  </table>
+</div>
+
+<script>
+const KEY = 'checkinout_logs_v1';
+const TRASH_KEY = 'checkinout_trash_v1';
+let logs  = JSON.parse(localStorage.getItem(KEY) || '[]');        // [{in, out}]
+let trash = JSON.parse(localStorage.getItem(TRASH_KEY) || '[]');  // [{in, out, deletedAt}]
+
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const save = () => {
+  localStorage.setItem(KEY, JSON.stringify(logs));
+  localStorage.setItem(TRASH_KEY, JSON.stringify(trash));
+};
+const fmtDate = iso => new Date(iso).toLocaleDateString();
+const fmtTime = iso => new Date(iso).toLocaleTimeString();
+const fmtDateTime = iso => new Date(iso).toLocaleString();
+const openIndex = () => logs.findIndex(l => l.out === null);
+const isOpen = () => openIndex() !== -1;
+const sortLogs = () => logs.sort((a,b) => new Date(a.in) - new Date(b.in));
+
+function fmtDuration(ms){
+  const s = Math.floor(ms / 1000);
+  return `${pad(Math.floor(s/3600))}h ${pad(Math.floor(s%3600/60))}m ${pad(s%60)}s`;
+}
+
+/* ---------- period helpers (weeks are ISO: Monday start) ---------- */
+function weekKey(d){
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const y = t.getUTCFullYear();
+  const w = Math.ceil(((t - Date.UTC(y,0,1)) / 86400000 + 1) / 7);
+  return `${y}-W${pad(w)}`;
+}
+const monthKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+const yearKey  = d => String(d.getFullYear());
+function keyOf(type, d){ return type==='week' ? weekKey(d) : type==='month' ? monthKey(d) : yearKey(d); }
+
+function rangeOf(type, val){
+  if (type === 'week'){
+    const [y, w] = val.split('-W').map(Number);
+    const jan4 = new Date(y, 0, 4);
+    const mon1 = new Date(y, 0, 4 - ((jan4.getDay() || 7) - 1));
+    const start = new Date(mon1); start.setDate(mon1.getDate() + (w-1)*7);
+    const end = new Date(start);  end.setDate(start.getDate() + 7);
+    return [start, end];
+  }
+  if (type === 'month'){
+    const [y, m] = val.split('-').map(Number);
+    return [new Date(y, m-1, 1), new Date(y, m, 1)];
+  }
+  const y = Number(val);
+  return [new Date(y,0,1), new Date(y+1,0,1)];
+}
+
+/* ---------- actions ---------- */
+function checkIn(){
+  if (isOpen()) return alert('You are already checked IN. Check OUT first.');
+  logs.push({ in: new Date().toISOString(), out: null });
+  save(); render();
+}
+function checkOut(){
+  const i = openIndex();
+  if (i === -1) return alert('You are not checked IN.');
+  logs[i].out = new Date().toISOString();
+  save(); render();
+}
+
+// Delete = move to trash (still stored)
+function removeEntry(i){
+  if (!confirm('Move this entry to Trash?')) return;
+  const [item] = logs.splice(i, 1);
+  trash.push({ ...item, deletedAt: new Date().toISOString() });
+  save(); render();
+}
+function restoreEntry(i){
+  const item = trash[i];
+  if (item.out === null && isOpen())
+    return alert('You already have an active check-in. Check OUT first, then restore this one.');
+  if (logs.some(l => l.in === item.in))
+    return alert('An entry with this check-in time already exists.');
+  trash.splice(i, 1);
+  logs.push({ in: item.in, out: item.out });
+  sortLogs(); save(); render();
+}
+// Permanent erase
+function deleteForever(i){
+  if (!confirm('Permanently erase this entry? This cannot be undone.')) return;
+  trash.splice(i, 1);
+  save(); render();
+}
+function emptyTrash(){
+  if (!trash.length) return;
+  if (!confirm(`Permanently erase all ${trash.length} entries in Trash? This cannot be undone.`)) return;
+  trash = [];
+  save(); render();
+}
+
+/* ---------- filter UI ---------- */
+function setCurrentPeriod(){
+  const now = new Date();
+  $('weekPick').value  = weekKey(now);
+  $('monthPick').value = monthKey(now);
+  $('yearPick').value  = yearKey(now);
+}
+function updatePickers(){
+  const p = $('period').value;
+  $('weekPick').hidden  = p !== 'week';
+  $('monthPick').hidden = p !== 'month';
+  $('yearPick').hidden  = p !== 'year';
+  $('todayBtn').hidden  = p === 'all';
+}
+function currentFilter(){
+  const p = $('period').value;
+  if (p === 'all') return { p, list: logs.map((l,i) => ({...l, i})) };
+  const val = $(p + 'Pick').value;
+  if (!val) return { p, list: [] };
+  const [s, e] = rangeOf(p, val);
+  return { p, list: logs.map((l,i) => ({...l, i})).filter(l => { const d = new Date(l.in); return d >= s && d < e; }) };
+}
+
+/* ---------- render ---------- */
+function render(){
+  const open = isOpen();
+  $('inBtn').disabled  = open;
+  $('outBtn').disabled = !open;
+  $('status').innerHTML = open
+    ? `🟢 Checked IN since <b>${fmtTime(logs[openIndex()].in)}</b>`
+    : '⚪ Currently checked OUT';
+
+  const { p, list } = currentFilter();
+  let totalMs = 0;
+  $('rows').innerHTML = list.map(l => {
+    let dur = '—';
+    if (l.out){ const d = new Date(l.out) - new Date(l.in); totalMs += d; dur = fmtDuration(d); }
+    return `<tr><td>${l.i+1}</td><td>${fmtDate(l.in)}</td><td>${fmtTime(l.in)}</td>
+      <td>${l.out ? fmtTime(l.out) : '<i>in progress</i>'}</td><td>${dur}</td>
+      <td><button class="del" title="Move to Trash" onclick="removeEntry(${l.i})">✕</button></td></tr>`;
+  }).reverse().join('') || '<tr><td colspan="6"><i>No entries</i></td></tr>';
+  $('total').textContent = `Sessions: ${list.length}  |  Total time: ${fmtDuration(totalMs)}`;
+
+  // grouped summary
+  const gType = p === 'all' ? 'month' : p;
+  $('sumTitle').textContent = 'Summary by ' + gType;
+  const groups = {};
+  logs.forEach(l => {
+    const k = keyOf(gType, new Date(l.in));
+    groups[k] = groups[k] || { n:0, ms:0 };
+    groups[k].n++;
+    if (l.out) groups[k].ms += new Date(l.out) - new Date(l.in);
+  });
+  $('sumRows').innerHTML = Object.keys(groups).sort().reverse().map(k =>
+    `<tr data-k="${k}"><td>${k}</td><td>${groups[k].n}</td><td>${fmtDuration(groups[k].ms)}</td></tr>`
+  ).join('') || '<tr><td colspan="3"><i>No data</i></td></tr>';
+  $('sumRows').dataset.type = gType;
+
+  // trash
+  $('trashCount').textContent = trash.length;
+  $('emptyTrashBtn').disabled = !trash.length;
+  $('trashRows').innerHTML = trash.map((t, i) => {
+    const dur = t.out ? fmtDuration(new Date(t.out) - new Date(t.in)) : '—';
+    return `<tr><td>${fmtDateTime(t.deletedAt)}</td><td>${fmtDateTime(t.in)}</td>
+      <td>${t.out ? fmtDateTime(t.out) : '<i>in progress</i>'}</td><td>${dur}</td>
+      <td><button class="restore" onclick="restoreEntry(${i})">Restore</button>
+          <button class="del" onclick="deleteForever(${i})">Delete forever</button></td></tr>`;
+  }).reverse().join('') || '<tr><td colspan="5"><i>Trash is empty</i></td></tr>';
+}
+
+/* ---------- export / import ---------- */
+function download(name, text, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type}));
+  a.download = name; a.click();
+}
+
+function parseCSVLine(line){
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++){
+    const c = line[i];
+    if (q){ if (c === '"' && line[i+1] === '"'){ cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur); return out.map(s => s.trim());
+}
+
+function cleanItems(items){
+  let skipped = 0; const clean = [];
+  items.forEach(r => {
+    const a = new Date(r.in), b = r.out ? new Date(r.out) : null;
+    if (isNaN(a) || (b && (isNaN(b) || b < a))) { skipped++; return; }
+    const o = { in: a.toISOString(), out: b ? b.toISOString() : null };
+    if (r.deletedAt && !isNaN(new Date(r.deletedAt))) o.deletedAt = new Date(r.deletedAt).toISOString();
+    clean.push(o);
+  });
+  return { clean, skipped };
+}
+
+// returns { logs, trash, skipped }
+function parseImport(name, text){
+  if (name.toLowerCase().endsWith('.json')){
+    const data = JSON.parse(text);
+    let l = [], t = null;
+    if (Array.isArray(data)) l = data;                       // old backup format
+    else if (data && Array.isArray(data.logs)) { l = data.logs; t = data.trash || []; }
+    else throw new Error('Unrecognised JSON format');
+    const a = cleanItems(l.map(r => ({ in: r.in, out: r.out || null })));
+    const b = t ? cleanItems(t.map(r => ({ in: r.in, out: r.out || null, deletedAt: r.deletedAt }))) : null;
+    return { logs: a.clean, trash: b ? b.clean : null, skipped: a.skipped + (b ? b.skipped : 0) };
+  }
+  const items = [];
+  text.split(/\r?\n/).filter(x => x.trim()).forEach((line, idx) => {
+    const c = parseCSVLine(line);
+    if (idx === 0 && /check\s*in/i.test(c[0])) return;
+    items.push({ in: c[0], out: c[1] || null });
+  });
+  const a = cleanItems(items);
+  return { logs: a.clean, trash: null, skipped: a.skipped };
+}
+
+/* ---------- events ---------- */
+$('inBtn').onclick  = checkIn;
+$('outBtn').onclick = checkOut;
+$('emptyTrashBtn').onclick = emptyTrash;
+$('period').onchange = () => { updatePickers(); render(); };
+['weekPick','monthPick','yearPick'].forEach(id => $(id).onchange = render);
+$('yearPick').oninput = render;
+$('todayBtn').onclick = () => { setCurrentPeriod(); render(); };
+
+$('sumRows').onclick = e => {
+  const tr = e.target.closest('tr[data-k]'); if (!tr) return;
+  const type = $('sumRows').dataset.type;
+  $('period').value = type;
+  $(type + 'Pick').value = tr.dataset.k;
+  updatePickers(); render();
+};
+
+$('csvBtn').onclick = () => {
+  const rows = ['Check IN,Check OUT,Duration'];
+  currentFilter().list.forEach(l => rows.push([
+    l.in, l.out || '', l.out ? fmtDuration(new Date(l.out) - new Date(l.in)) : ''
+  ].map(v => `"${v}"`).join(',')));
+  download('checkin_log.csv', rows.join('\n'), 'text/csv');
+};
+// Backup now includes the trash too
+$('jsonBtn').onclick = () =>
+  download('checkin_backup.json', JSON.stringify({ logs, trash }, null, 2), 'application/json');
+
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const res = parseImport(f.name, r.result);
+      if ($('importMode').value === 'replace') {
+        logs = res.logs;
+        if (res.trash) trash = res.trash.map(t => ({ ...t, deletedAt: t.deletedAt || new Date().toISOString() }));
+      } else {
+        const seen = new Set(logs.map(l => l.in));
+        res.logs.forEach(l => { if (!seen.has(l.in)) logs.push(l); });
+        if (res.trash) {
+          const seenT = new Set(trash.map(t => t.in));
+          res.trash.forEach(t => { if (!seenT.has(t.in)) trash.push({ ...t, deletedAt: t.deletedAt || new Date().toISOString() }); });
+        }
+      }
+      sortLogs(); save(); render();
+      alert(`Imported ${res.logs.length} entries.` + (res.skipped ? ` Skipped ${res.skipped} invalid rows.` : ''));
+    } catch (err) { alert('Could not read file: ' + err.message); }
+    e.target.value = '';
+  };
+  r.readAsText(f);
+};
+
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+
+setCurrentPeriod(); updatePickers(); render();
+</script>
+</body>
+</html>
